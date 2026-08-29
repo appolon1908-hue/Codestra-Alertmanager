@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "upstream_clone_url": "https://github.com/prometheus/alertmanager.git",
+  "upstream_ref": "main",
+  "upstream_commit": "41dec65b373bc9ec38d8e02e51f790b9f71008df",
+  "import_path": "upstream",
+  "synchronized_at": "2026-08-29T17:25:08.391194+00:00",
+  "deployment_enabled": false,
+  "sanitizations": [
+    {
+      "rule": "replace Slack incoming-webhook test fixture host with hooks.slack.invalid",
+      "files_changed": 5
+    }
+  ]
+}
