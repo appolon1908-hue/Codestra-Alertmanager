@@ -44,12 +44,41 @@ jobs:
           UPSTREAM_SHA="$(git -C .codestra-upstream-src rev-parse HEAD)"
           rm -rf .codestra-upstream-src/.git
           mv .codestra-upstream-src "$IMPORT_PATH"
-          export UPSTREAM_URL UPSTREAM_REF UPSTREAM_SHA
+
+          SANITIZED_COUNT="$(python3 - <<'PY'
+          from pathlib import Path
+          needle=b'https://hooks.slack.com/services/'
+          replacement=b'https://hooks.slack.invalid/services/'
+          changed=0
+          for path in Path('upstream').rglob('*'):
+              if not path.is_file():
+                  continue
+              try:
+                  data=path.read_bytes()
+              except OSError:
+                  continue
+              if needle in data:
+                  path.write_bytes(data.replace(needle, replacement))
+                  changed += 1
+          print(changed)
+          PY
+          )"
+
+          export UPSTREAM_URL UPSTREAM_REF UPSTREAM_SHA SANITIZED_COUNT
           python3 - <<'PY'
           import json, os
           from datetime import datetime, timezone
           from pathlib import Path
-          Path('CODESTRA_UPSTREAM_LOCK.json').write_text(json.dumps({'schema_version':'1.0','upstream_clone_url':os.environ['UPSTREAM_URL'],'upstream_ref':os.environ['UPSTREAM_REF'],'upstream_commit':os.environ['UPSTREAM_SHA'],'import_path':'upstream','synchronized_at':datetime.now(timezone.utc).isoformat(),'deployment_enabled':False}, indent=2)+'\n')
+          Path('CODESTRA_UPSTREAM_LOCK.json').write_text(json.dumps({
+              'schema_version':'1.0',
+              'upstream_clone_url':os.environ['UPSTREAM_URL'],
+              'upstream_ref':os.environ['UPSTREAM_REF'],
+              'upstream_commit':os.environ['UPSTREAM_SHA'],
+              'import_path':'upstream',
+              'synchronized_at':datetime.now(timezone.utc).isoformat(),
+              'deployment_enabled':False,
+              'sanitizations':[{ 'rule':'replace Slack incoming-webhook test fixture host with hooks.slack.invalid', 'files_changed':int(os.environ['SANITIZED_COUNT']) }]
+          }, indent=2)+'\n')
           PY
           git config user.name 'codestra-upstream-sync'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
