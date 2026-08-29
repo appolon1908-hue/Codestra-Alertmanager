@@ -1,0 +1,37 @@
+name: Validate Codestra Alertmanager routing
+
+on:
+  pull_request:
+    paths:
+      - 'codestra/**'
+      - 'scripts/validate_codestra_alertmanager.py'
+      - '.github/workflows/validate-codestra-alertmanager.yml'
+  push:
+    branches:
+      - main
+      - development
+      - staging
+      - production
+      - test
+    paths:
+      - 'codestra/**'
+      - 'scripts/validate_codestra_alertmanager.py'
+      - '.github/workflows/validate-codestra-alertmanager.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile validator
+        run: python3 -m py_compile scripts/validate_codestra_alertmanager.py
+      - name: Validate Alertmanager policy and routing
+        run: python3 scripts/validate_codestra_alertmanager.py
+      - name: Reject committed secret-like values
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ! grep -RInE '(api[_-]?key|client[_-]?secret|password|token)[[:space:]]*[:=][[:space:]]*[A-Za-z0-9/+_.-]{16,}' codestra
