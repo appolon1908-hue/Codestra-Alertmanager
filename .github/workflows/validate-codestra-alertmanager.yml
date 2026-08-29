@@ -46,8 +46,10 @@ jobs:
           sudo install -d -m 0700 /run/secrets
           printf '%s\n' 'http://127.0.0.1:9/v1/alerts' | sudo tee /run/secrets/middleware-alert-webhook-url >/dev/null
           printf '%s\n' 'ci-nondelivery-placeholder' | sudo tee /run/secrets/middleware-alert-webhook-token >/dev/null
-          sudo chmod 0600 /run/secrets/middleware-alert-webhook-*
-          .bin/amtool check-config codestra/alertmanager.yml --enable-feature=utf8-strict-mode
+          sudo chmod 0600 \
+            /run/secrets/middleware-alert-webhook-url \
+            /run/secrets/middleware-alert-webhook-token
+          .bin/amtool --enable-feature=utf8-strict-mode check-config codestra/alertmanager.yml
 
       - name: Render and inspect private runtime authority
         env:
