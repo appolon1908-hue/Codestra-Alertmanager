@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "component": "alertmanager",
+  "codestra_repository": "appolon1908-hue/Codestra-Alertmanager",
+  "upstream_repository": "prometheus/alertmanager",
+  "upstream_clone_url": "https://github.com/prometheus/alertmanager.git",
+  "upstream_ref": "main",
+  "import_path": "upstream",
+  "import_mode": "shallow-source-snapshot",
+  "preserve_upstream_license": true,
+  "branches": ["main", "staging", "production"],
+  "deployment_enabled": false
+}
