@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -18,10 +19,49 @@ EXPECTED_PATHS = [
     "config/testdata/conf.slack-default-app-token.yml",
     "config/testdata/conf.slack-update-message-and-webhook.yml",
 ]
-EXPECTED_TRANSFORMED_TREE = "0f92e4b59267985dbe2ea152e655dcbc147f7075"
 
 
-def validate_upstream(source: dict, lock: dict) -> None:
+def _validate_source_transform(transform: object) -> str:
+    if not isinstance(transform, dict):
+        raise ValueError("source_transform_authority_drift")
+    expected = {
+        "rule": "replace Slack incoming-webhook test fixture host with hooks.slack.invalid",
+        "needle": "https://hooks.slack.com/services/",
+        "replacement": "https://hooks.slack.invalid/services/",
+        "expected_occurrences": 6,
+        "expected_paths": EXPECTED_PATHS,
+    }
+    if {key: transform.get(key) for key in expected} != expected:
+        raise ValueError("source_transform_authority_drift")
+    if set(transform) != {*expected, "transformed_tree_oid"}:
+        raise ValueError("source_transform_authority_drift")
+    tree = transform.get("transformed_tree_oid")
+    if not isinstance(tree, str) or re.fullmatch(r"[0-9a-f]{40}", tree) is None:
+        raise ValueError("source_transform_tree_must_be_exact_oid")
+    return tree
+
+
+def _validate_lock_transform(transform: object) -> str:
+    if not isinstance(transform, dict):
+        raise ValueError("source_transform_lock_drift")
+    expected = {
+        "rule": "replace Slack incoming-webhook test fixture host with hooks.slack.invalid",
+        "expected_occurrences": 6,
+        "expected_paths": EXPECTED_PATHS,
+    }
+    if {key: transform.get(key) for key in expected} != expected:
+        raise ValueError("source_transform_lock_drift")
+    if set(transform) != {*expected, "transformed_tree_oid"}:
+        raise ValueError("source_transform_lock_drift")
+    tree = transform.get("transformed_tree_oid")
+    if not isinstance(tree, str) or re.fullmatch(r"[0-9a-f]{40}", tree) is None:
+        raise ValueError("source_transform_lock_tree_must_be_exact_oid")
+    return tree
+
+
+def validate_upstream(
+    source: dict, lock: dict, *, allow_pending_sync: bool = False
+) -> None:
     expected = {
         "component": "Alertmanager",
         "codestra_repository": "appolon1908-hue/Codestra-Alertmanager",
@@ -47,25 +87,18 @@ def validate_upstream(source: dict, lock: dict) -> None:
     ):
         if lock.get(key) != expected[key]:
             raise ValueError(f"upstream_lock_drift:{key}")
-    if lock.get("upstream_ref") != ref or lock.get("upstream_commit") != ref:
+    lock_ref = lock.get("upstream_ref")
+    lock_commit = lock.get("upstream_commit")
+    if (
+        not isinstance(lock_ref, str)
+        or re.fullmatch(r"[0-9a-f]{40}", lock_ref) is None
+        or lock_commit != lock_ref
+    ):
         raise ValueError("upstream_lock_not_bound_to_exact_ref")
-    source_transform = source.get("source_transform")
-    if source_transform != {
-        "rule": "replace Slack incoming-webhook test fixture host with hooks.slack.invalid",
-        "needle": "https://hooks.slack.com/services/",
-        "replacement": "https://hooks.slack.invalid/services/",
-        "expected_occurrences": 6,
-        "expected_paths": EXPECTED_PATHS,
-        "transformed_tree_oid": EXPECTED_TRANSFORMED_TREE,
-    }:
-        raise ValueError("source_transform_authority_drift")
-    if lock.get("source_transform") != {
-        "rule": "replace Slack incoming-webhook test fixture host with hooks.slack.invalid",
-        "expected_occurrences": 6,
-        "expected_paths": EXPECTED_PATHS,
-        "transformed_tree_oid": EXPECTED_TRANSFORMED_TREE,
-    }:
-        raise ValueError("source_transform_lock_drift")
+    source_tree = _validate_source_transform(source.get("source_transform"))
+    lock_tree = _validate_lock_transform(lock.get("source_transform"))
+    if not allow_pending_sync and (lock_ref != ref or lock_tree != source_tree):
+        raise ValueError("upstream_lock_not_bound_to_exact_ref")
 
 
 def validate_sync(source: str, document: dict) -> None:
@@ -122,10 +155,17 @@ def validate_workflow(source: str) -> None:
         "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
         "persist-credentials: false",
         "fetch-depth: 0",
+        "Classify exact metadata bootstrap change",
+        'git diff --name-only -z "$base_sha" "$GITHUB_SHA"',
+        "${#changed_paths[@]} == 1",
+        '"${changed_paths[0]}" == CODESTRA_UPSTREAM.json',
+        "CODESTRA_PENDING_UPSTREAM_SYNC=1",
         "Bind vendored Git tree to deterministic transformed official commit",
+        'vendored_expected_tree="$lock_tree"',
         "git rev-parse 'HEAD:upstream'",
-        '[[ "$vendored_tree" == "$transformed_tree" ]]',
+        '[[ "$vendored_tree" == "$vendored_expected_tree" ]]',
         '[[ "$transformed_tree" == "$expected_tree" ]]',
+        "scripts/reject_repository_secrets.sh .",
         'git diff --check "$base_sha" "$GITHUB_SHA" -- . \':(exclude)upstream\'',
     )
     for token in required:
@@ -139,6 +179,26 @@ def validate_workflow(source: str) -> None:
         raise ValueError("whitespace_check_must_use_committed_range")
     if "--exclude-dir=tests" in source:
         raise ValueError("repository_tests_must_be_secret_scanned")
+    if re.search(r"!\s+grep\s+-R", source):
+        raise ValueError("secret_scan_errors_must_fail_closed")
+
+
+def validate_secret_scanner(source: str) -> None:
+    required = (
+        "grep -RIlE",
+        "--exclude-dir=.git",
+        "--exclude-dir=upstream",
+        "secret_scan_status=$?",
+        'case "$secret_scan_status" in',
+        'exit "$secret_scan_status"',
+    )
+    for token in required:
+        if token not in source:
+            raise ValueError(f"secret_scan_boundary_missing:{token}")
+    if "--exclude-dir=tests" in source:
+        raise ValueError("repository_tests_must_be_secret_scanned")
+    if re.search(r"!\s+grep\s+-R", source):
+        raise ValueError("secret_scan_errors_must_fail_closed")
 
 
 def validate_repository() -> None:
@@ -147,6 +207,7 @@ def validate_repository() -> None:
         "lock": ROOT / "CODESTRA_UPSTREAM_LOCK.json",
         "sync": ROOT / ".github/workflows/upstream-source-sync.yml",
         "validate": ROOT / ".github/workflows/validate.yml",
+        "secret_scanner": ROOT / "scripts/reject_repository_secrets.sh",
     }
     for path in paths.values():
         if not path.is_file() or path.is_symlink():
@@ -155,10 +216,16 @@ def validate_repository() -> None:
     lock = json.loads(paths["lock"].read_text())
     sync_source = paths["sync"].read_text()
     validate_source = paths["validate"].read_text()
-    validate_upstream(source, lock)
+    secret_scanner_source = paths["secret_scanner"].read_text()
+    validate_upstream(
+        source,
+        lock,
+        allow_pending_sync=os.environ.get("CODESTRA_PENDING_UPSTREAM_SYNC") == "1",
+    )
     validate_sync(sync_source, yaml.safe_load(sync_source))
     yaml.safe_load(validate_source)
     validate_workflow(validate_source)
+    validate_secret_scanner(secret_scanner_source)
     if (ROOT / "upstream/.git").exists():
         raise ValueError("nested_upstream_git_metadata_forbidden")
 

@@ -25,6 +25,27 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: Classify exact metadata bootstrap change
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+          elif [[ "$GITHUB_EVENT_NAME" == push && "${{ github.event.before }}" =~ ^[0-9a-f]{40}$ && "${{ github.event.before }}" != '0000000000000000000000000000000000000000' ]]; then
+            base_sha="${{ github.event.before }}"
+          else
+            echo 'CODESTRA_PENDING_UPSTREAM_SYNC=0' >> "$GITHUB_ENV"
+            exit 0
+          fi
+          mapfile -d '' -t changed_paths < <(
+            git diff --name-only -z "$base_sha" "$GITHUB_SHA"
+          )
+          if (( ${#changed_paths[@]} == 1 )) && [[ "${changed_paths[0]}" == CODESTRA_UPSTREAM.json ]]; then
+            echo 'CODESTRA_PENDING_UPSTREAM_SYNC=1' >> "$GITHUB_ENV"
+          else
+            echo 'CODESTRA_PENDING_UPSTREAM_SYNC=0' >> "$GITHUB_ENV"
+          fi
+
       - name: Set up pinned Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
@@ -50,12 +71,16 @@ jobs:
           data = json.load(open('CODESTRA_UPSTREAM.json'))
           print(data['upstream_ref'])
           print(data['source_transform']['transformed_tree_oid'])
+          lock = json.load(open('CODESTRA_UPSTREAM_LOCK.json'))
+          print(lock['source_transform']['transformed_tree_oid'])
           PY
           )
           upstream_ref="${values[0]}"
           expected_tree="${values[1]}"
+          lock_tree="${values[2]}"
           [[ "$upstream_ref" =~ ^[0-9a-f]{40}$ ]]
           [[ "$expected_tree" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$lock_tree" =~ ^[0-9a-f]{40}$ ]]
           staging="$(mktemp -d)"
           trap 'rm -rf -- "$staging"' EXIT
           git init --quiet "$staging/source"
@@ -97,14 +122,17 @@ jobs:
           transformed_tree="$(git -C "$staging/source" write-tree)"
           vendored_tree="$(git rev-parse 'HEAD:upstream')"
           [[ "$transformed_tree" == "$expected_tree" ]]
-          [[ "$vendored_tree" == "$transformed_tree" ]]
+          vendored_expected_tree="$expected_tree"
+          if [[ "${CODESTRA_PENDING_UPSTREAM_SYNC:-0}" == 1 ]]; then
+            vendored_expected_tree="$lock_tree"
+          fi
+          [[ "$vendored_tree" == "$vendored_expected_tree" ]]
 
       - name: Reject control-plane secrets and whitespace errors
         shell: bash
         run: |
           set -Eeuo pipefail
-          ! grep -RIlE --exclude-dir=.git --exclude-dir=upstream \
-            '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|Authorization:[[:space:]]*Bearer[[:space:]]+[A-Za-z0-9._~-]{16,}|client_secret[[:space:]]*=[[:space:]]*[^[:space:]<]+)' .
+          scripts/reject_repository_secrets.sh .
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             base_sha="${{ github.event.pull_request.base.sha }}"
           elif [[ "$GITHUB_EVENT_NAME" == push && "${{ github.event.before }}" =~ ^[0-9a-f]{40}$ && "${{ github.event.before }}" != '0000000000000000000000000000000000000000' ]]; then

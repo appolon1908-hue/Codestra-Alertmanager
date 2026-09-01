@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -78,19 +81,36 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertIn('fetch --depth 1 --no-tags origin "$upstream_ref"', source)
         self.assertIn('transformed_tree="$(git -C "$staging/source" write-tree)"', source)
         self.assertIn("git rev-parse 'HEAD:upstream'", source)
-        self.assertIn('[[ "$vendored_tree" == "$transformed_tree" ]]', source)
+        self.assertIn('vendored_expected_tree="$lock_tree"', source)
+        self.assertIn('[[ "$vendored_tree" == "$vendored_expected_tree" ]]', source)
         self.assertIn('[[ "$transformed_tree" == "$expected_tree" ]]', source)
+
+    def test_metadata_bootstrap_keeps_current_vendored_tree_bound_to_lock(self) -> None:
+        source = json.loads((ROOT / "CODESTRA_UPSTREAM.json").read_text())
+        lock = json.loads((ROOT / "CODESTRA_UPSTREAM_LOCK.json").read_text())
+        source["upstream_ref"] = "a" * 40
+        source["source_transform"]["transformed_tree_oid"] = "b" * 40
+        with self.assertRaisesRegex(ValueError, "upstream_lock_not_bound_to_exact_ref"):
+            VALIDATOR.validate_upstream(source, lock)
+        VALIDATOR.validate_upstream(source, lock, allow_pending_sync=True)
+        workflow = (ROOT / ".github/workflows/validate.yml").read_text()
+        self.assertIn("${#changed_paths[@]} == 1", workflow)
+        self.assertIn('"${changed_paths[0]}" == CODESTRA_UPSTREAM.json', workflow)
+        self.assertIn("CODESTRA_PENDING_UPSTREAM_SYNC=1", workflow)
 
     def test_slack_fixture_transform_is_exact_and_bounded(self) -> None:
         source = json.loads((ROOT / "CODESTRA_UPSTREAM.json").read_text())
         lock = json.loads((ROOT / "CODESTRA_UPSTREAM_LOCK.json").read_text())
-        VALIDATOR.validate_upstream(source, lock)
+        pending_sync = os.environ.get("CODESTRA_PENDING_UPSTREAM_SYNC") == "1"
+        VALIDATOR.validate_upstream(source, lock, allow_pending_sync=pending_sync)
         transform = source["source_transform"]
         self.assertEqual(transform["expected_occurrences"], 6)
         self.assertEqual(transform["expected_paths"], VALIDATOR.EXPECTED_PATHS)
-        self.assertEqual(
-            transform["transformed_tree_oid"], VALIDATOR.EXPECTED_TRANSFORMED_TREE
-        )
+        if not pending_sync:
+            self.assertEqual(
+                transform["transformed_tree_oid"],
+                lock["source_transform"]["transformed_tree_oid"],
+            )
         self.assertIn(
             'git read-tree --prefix=upstream/ "${TRANSFORMED_COMMIT}^{tree}"',
             self.sync_source,
@@ -102,7 +122,9 @@ class RepositorySecurityTests(unittest.TestCase):
         unsafe = json.loads(json.dumps(source))
         unsafe["source_transform"]["expected_paths"].append("unexpected")
         with self.assertRaisesRegex(ValueError, "source_transform_authority_drift"):
-            VALIDATOR.validate_upstream(unsafe, lock)
+            VALIDATOR.validate_upstream(
+                unsafe, lock, allow_pending_sync=pending_sync
+            )
 
     def test_actions_are_pinned_and_validation_is_unconditional(self) -> None:
         source = (ROOT / ".github/workflows/validate.yml").read_text()
@@ -121,14 +143,38 @@ class RepositorySecurityTests(unittest.TestCase):
         )
 
     def test_repository_tests_are_included_in_secret_scan(self) -> None:
-        source = (ROOT / ".github/workflows/validate.yml").read_text()
+        source = (ROOT / "scripts/reject_repository_secrets.sh").read_text()
         self.assertNotIn("--exclude-dir=tests", source)
         unsafe = source.replace(
             "--exclude-dir=upstream",
             "--exclude-dir=upstream --exclude-dir=tests",
         )
         with self.assertRaisesRegex(ValueError, "repository_tests_must_be_secret_scanned"):
-            VALIDATOR.validate_workflow(unsafe)
+            VALIDATOR.validate_secret_scanner(unsafe)
+
+    def test_secret_scan_matches_secrets_and_fails_on_traversal_errors(self) -> None:
+        scanner = ROOT / "scripts/reject_repository_secrets.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            scan_root = Path(directory)
+            (scan_root / "clean.txt").write_text("no credential material\n")
+            clean = subprocess.run(
+                [scanner, scan_root], check=False, capture_output=True, text=True
+            )
+            self.assertEqual(clean.returncode, 0)
+
+            secret = "client" + "_secret = " + ("A" * 24) + "\n"
+            (scan_root / "credential.txt").write_text(secret)
+            found = subprocess.run(
+                [scanner, scan_root], check=False, capture_output=True, text=True
+            )
+            self.assertEqual(found.returncode, 1)
+            (scan_root / "credential.txt").unlink()
+
+            os.symlink(scan_root / "missing-target", scan_root / "dangling")
+            failed = subprocess.run(
+                [scanner, scan_root], check=False, capture_output=True, text=True
+            )
+            self.assertGreater(failed.returncode, 1)
 
 
 if __name__ == "__main__":
