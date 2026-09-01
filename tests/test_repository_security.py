@@ -191,6 +191,24 @@ class RepositorySecurityTests(unittest.TestCase):
             for serialized_secret in (
                 '{"' + "client_" + "secret" + '":"' + ("B" * 32) + '"}\n',
                 "client_" + "secret: " + ("C" * 32) + "\n",
+                (
+                    '{"'
+                    + "Author"
+                    + "ization"
+                    + '":"'
+                    + "Bearer "
+                    + ("D" * 32)
+                    + '"}\n'
+                ),
+                (
+                    "{ '"
+                    + "author"
+                    + "ization"
+                    + "' : '"
+                    + "bearer "
+                    + ("E" * 32)
+                    + "' }\n"
+                ),
             ):
                 serialized = scan_root / "serialized-credential.txt"
                 serialized.write_text(serialized_secret)

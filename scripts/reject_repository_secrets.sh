@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 search_root="${1:-.}"
-pattern="(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|Authorization:[[:space:]]*Bearer[[:space:]]+[A-Za-z0-9._~-]{16,}|[\"']?client_secret[\"']?[[:space:]]*[:=][[:space:]]*[^[:space:]<]+)"
+pattern="(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|[\"']?Authorization[\"']?[[:space:]]*:[[:space:]]*[\"']?[[:space:]]*Bearer[[:space:]]+[A-Za-z0-9._~-]{16,}|[\"']?client_secret[\"']?[[:space:]]*[:=][[:space:]]*[^[:space:]<]+)"
 path_list="$(mktemp)"
 trap 'rm -f -- "$path_list"' EXIT
 
