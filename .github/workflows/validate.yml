@@ -140,4 +140,5 @@ jobs:
           else
             base_sha="$(git rev-parse HEAD^)"
           fi
+          scripts/reject_repository_secrets.sh --git-range "$base_sha" "$GITHUB_SHA"
           git diff --check "$base_sha" "$GITHUB_SHA" -- . ':(exclude)upstream'

@@ -215,6 +215,17 @@ class RepositorySecurityTests(unittest.TestCase):
                     + "Bearer "
                     + "abc/def+ghijklmnopqrstuvwxyz==\n"
                 ),
+                (
+                    '{"'
+                    + "Author"
+                    + "ization"
+                    + '":"'
+                    + "Bearer "
+                    + "abc"
+                    + "\\/"
+                    + "defghijklmnopqrstuvwxyz=="
+                    + '"}\n'
+                ),
             ):
                 serialized = scan_root / "serialized-credential.txt"
                 serialized.write_text(serialized_secret)
@@ -244,6 +255,58 @@ class RepositorySecurityTests(unittest.TestCase):
                 [scanner, scan_root], check=False, capture_output=True, text=True
             )
             self.assertGreater(failed.returncode, 1)
+
+    def test_secret_scan_covers_credentials_removed_before_final_head(self) -> None:
+        scanner = ROOT / "scripts/reject_repository_secrets.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            subprocess.run(["git", "init", "-q", repository], check=True)
+            subprocess.run(
+                ["git", "-C", repository, "config", "user.name", "scanner-test"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", repository, "config", "user.email", "scanner@example.invalid"],
+                check=True,
+            )
+            tracked = repository / "policy.txt"
+            tracked.write_text("clean\n")
+            subprocess.run(["git", "-C", repository, "add", "policy.txt"], check=True)
+            subprocess.run(["git", "-C", repository, "commit", "-qm", "base"], check=True)
+            base_sha = subprocess.check_output(
+                ["git", "-C", repository, "rev-parse", "HEAD"], text=True
+            ).strip()
+
+            transient = repository / "transient.txt"
+            transient.write_text("CLIENT" + "_SECRET=" + ("Z" * 32) + "\n")
+            subprocess.run(["git", "-C", repository, "add", "transient.txt"], check=True)
+            subprocess.run(
+                ["git", "-C", repository, "commit", "-qm", "introduce transient"],
+                check=True,
+            )
+            transient.unlink()
+            subprocess.run(["git", "-C", repository, "add", "-u"], check=True)
+            subprocess.run(
+                ["git", "-C", repository, "commit", "-qm", "remove transient"],
+                check=True,
+            )
+            head_sha = subprocess.check_output(
+                ["git", "-C", repository, "rev-parse", "HEAD"], text=True
+            ).strip()
+
+            final_tree = subprocess.run(
+                [scanner, repository], check=False, capture_output=True, text=True
+            )
+            self.assertEqual(final_tree.returncode, 0)
+            history = subprocess.run(
+                [scanner, "--git-range", base_sha, head_sha],
+                cwd=repository,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(history.returncode, 1)
+            self.assertIn("transient.txt", history.stderr)
 
     def test_secret_scanner_cannot_skip_nul_containing_files(self) -> None:
         source = (ROOT / "scripts/reject_repository_secrets.sh").read_text()

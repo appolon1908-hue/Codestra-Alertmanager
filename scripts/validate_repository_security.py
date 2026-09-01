@@ -166,6 +166,7 @@ def validate_workflow(source: str) -> None:
         '[[ "$vendored_tree" == "$vendored_expected_tree" ]]',
         '[[ "$transformed_tree" == "$expected_tree" ]]',
         "scripts/reject_repository_secrets.sh .",
+        'scripts/reject_repository_secrets.sh --git-range "$base_sha" "$GITHUB_SHA"',
         'git diff --check "$base_sha" "$GITHUB_SHA" -- . \':(exclude)upstream\'',
     )
     for token in required:
@@ -198,6 +199,10 @@ def validate_secret_scanner(source: str) -> None:
         "find_status=$?",
         "secret_scan_status=$?",
         'exit "$secret_scan_status"',
+        '[[ "${1:-}" == --git-range ]]',
+        'git rev-list --reverse --topo-order "${base_sha}..${head_sha}"',
+        'git ls-tree -r -z --full-tree "$commit_sha"',
+        'git cat-file blob "$object_sha"',
     )
     for token in required:
         if token not in source:
