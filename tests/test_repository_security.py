@@ -180,11 +180,28 @@ class RepositorySecurityTests(unittest.TestCase):
             self.assertEqual(found.returncode, 1)
             (nested / "credential.txt").unlink()
 
+            binary_secret = scan_root / "nul-prefixed-credential.txt"
+            binary_secret.write_bytes(b"\0unrelated\n" + secret.encode())
+            binary_found = subprocess.run(
+                [scanner, scan_root], check=False, capture_output=True, text=True
+            )
+            self.assertEqual(binary_found.returncode, 1)
+            binary_secret.unlink()
+
             os.symlink(scan_root / "missing-target", scan_root / "dangling")
             failed = subprocess.run(
                 [scanner, scan_root], check=False, capture_output=True, text=True
             )
             self.assertGreater(failed.returncode, 1)
+
+    def test_secret_scanner_cannot_skip_nul_containing_files(self) -> None:
+        source = (ROOT / "scripts/reject_repository_secrets.sh").read_text()
+        self.assertIn("grep -aEiq", source)
+        unsafe = source.replace("grep -aEiq", "grep -IlEi")
+        with self.assertRaisesRegex(
+            ValueError, "binary_secret_scan_must_not_be_skipped"
+        ):
+            VALIDATOR.validate_secret_scanner(unsafe)
 
 
 if __name__ == "__main__":

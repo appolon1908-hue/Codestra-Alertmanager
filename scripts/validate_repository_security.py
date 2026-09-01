@@ -186,13 +186,15 @@ def validate_workflow(source: str) -> None:
 def validate_secret_scanner(source: str) -> None:
     if "--exclude-dir=tests" in source or "*/upstream" in source:
         raise ValueError("repository_tests_must_be_secret_scanned")
+    if re.search(r"grep\s+-[^\n]*I", source):
+        raise ValueError("binary_secret_scan_must_not_be_skipped")
     required = (
         'find "$search_root"',
         '-path "$search_root/.git"',
         '-path "$search_root/upstream"',
         "-type f -o -type l",
         '[[ -L "$path" ]]',
-        "grep -IlEi",
+        "grep -aEiq",
         "find_status=$?",
         "secret_scan_status=$?",
         'exit "$secret_scan_status"',

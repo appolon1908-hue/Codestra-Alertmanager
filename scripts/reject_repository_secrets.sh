@@ -23,7 +23,9 @@ while IFS= read -r -d '' path; do
     exit 2
   fi
   set +e
-  grep -IlEi "$pattern" -- "$path"
+  # Treat every tracked byte stream as text. GNU grep's -I/without-match mode
+  # silently accepts a file merely because it contains a NUL byte.
+  LC_ALL=C grep -aEiq "$pattern" -- "$path"
   secret_scan_status=$?
   set -e
   case "$secret_scan_status" in
