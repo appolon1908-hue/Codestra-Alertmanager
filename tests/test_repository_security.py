@@ -146,8 +146,8 @@ class RepositorySecurityTests(unittest.TestCase):
         source = (ROOT / "scripts/reject_repository_secrets.sh").read_text()
         self.assertNotIn("--exclude-dir=tests", source)
         unsafe = source.replace(
-            "--exclude-dir=upstream",
-            "--exclude-dir=upstream --exclude-dir=tests",
+            '-path "$search_root/upstream"',
+            '-path "*/upstream"',
         )
         with self.assertRaisesRegex(ValueError, "repository_tests_must_be_secret_scanned"):
             VALIDATOR.validate_secret_scanner(unsafe)
@@ -162,13 +162,23 @@ class RepositorySecurityTests(unittest.TestCase):
             )
             self.assertEqual(clean.returncode, 0)
 
-            secret = "client" + "_secret = " + ("A" * 24) + "\n"
-            (scan_root / "credential.txt").write_text(secret)
+            ignored_root = scan_root / "upstream"
+            ignored_root.mkdir()
+            secret = "CLIENT" + "_SECRET = " + ("A" * 24) + "\n"
+            (ignored_root / "credential.txt").write_text(secret)
+            ignored = subprocess.run(
+                [scanner, scan_root], check=False, capture_output=True, text=True
+            )
+            self.assertEqual(ignored.returncode, 0)
+
+            nested = scan_root / "tests/upstream"
+            nested.mkdir(parents=True)
+            (nested / "credential.txt").write_text(secret)
             found = subprocess.run(
                 [scanner, scan_root], check=False, capture_output=True, text=True
             )
             self.assertEqual(found.returncode, 1)
-            (scan_root / "credential.txt").unlink()
+            (nested / "credential.txt").unlink()
 
             os.symlink(scan_root / "missing-target", scan_root / "dangling")
             failed = subprocess.run(
