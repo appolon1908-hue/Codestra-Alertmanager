@@ -209,6 +209,12 @@ class RepositorySecurityTests(unittest.TestCase):
                     + ("E" * 32)
                     + "' }\n"
                 ),
+                (
+                    "Author"
+                    + "ization: "
+                    + "Bearer "
+                    + "abc/def+ghijklmnopqrstuvwxyz==\n"
+                ),
             ):
                 serialized = scan_root / "serialized-credential.txt"
                 serialized.write_text(serialized_secret)
@@ -217,6 +223,21 @@ class RepositorySecurityTests(unittest.TestCase):
                 )
                 self.assertEqual(serialized_found.returncode, 1)
                 serialized.unlink()
+
+            for label in ("ENCRYPTED", "DSA"):
+                private_key = scan_root / "private-key.txt"
+                private_key.write_text(
+                    "-----"
+                    + "BEGIN "
+                    + label
+                    + " PRIVATE"
+                    + " KEY-----\nfixture\n"
+                )
+                private_key_found = subprocess.run(
+                    [scanner, scan_root], check=False, capture_output=True, text=True
+                )
+                self.assertEqual(private_key_found.returncode, 1)
+                private_key.unlink()
 
             os.symlink(scan_root / "missing-target", scan_root / "dangling")
             failed = subprocess.run(
