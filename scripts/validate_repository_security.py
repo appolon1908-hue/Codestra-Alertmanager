@@ -91,7 +91,12 @@ def validate_sync(source: str, document: dict) -> None:
         '[[ "$TRANSFORMED_TREE_OID" == "$EXPECTED_TRANSFORMED_TREE" ]]',
         'git read-tree --prefix=upstream/ "${TRANSFORMED_COMMIT}^{tree}"',
         '[[ "$REMOTE_SHA" == "$LOCAL_SHA" ]]',
-        "gh pr list",
+        'head=${REPOSITORY_OWNER}:${SYNC_BRANCH}',
+        '[[ "$PR_BASE" == main ]]',
+        '[[ "$PR_HEAD" == "$SYNC_BRANCH" ]]',
+        '[[ "$PR_OWNER" == "$REPOSITORY_OWNER" ]]',
+        '[[ "$PR_REPOSITORY" == "$GITHUB_REPOSITORY" ]]',
+        '[[ "$PR_HEAD_SHA" == "$LOCAL_SHA" ]]',
         "Multiple open synchronization pull requests found.",
         "gh pr create",
         "--base main",
@@ -132,6 +137,8 @@ def validate_workflow(source: str) -> None:
         raise ValueError("pull_request_validation_must_be_unconditional")
     if re.search(r"^\s*git diff --check\s*$", source, re.MULTILINE):
         raise ValueError("whitespace_check_must_use_committed_range")
+    if "--exclude-dir=tests" in source:
+        raise ValueError("repository_tests_must_be_secret_scanned")
 
 
 def validate_repository() -> None:

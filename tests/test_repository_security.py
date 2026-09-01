@@ -44,8 +44,24 @@ class RepositorySecurityTests(unittest.TestCase):
             '[[ "$REMOTE_SHA" == "$LOCAL_SHA" ]]',
             "if (( ${#OPEN_PRS[@]} > 1 )); then",
             'export GIT_AUTHOR_DATE="$UPSTREAM_TIMESTAMP"',
+            'head=${REPOSITORY_OWNER}:${SYNC_BRANCH}',
+            '[[ "$PR_BASE" == main ]]',
+            '[[ "$PR_HEAD" == "$SYNC_BRANCH" ]]',
+            '[[ "$PR_OWNER" == "$REPOSITORY_OWNER" ]]',
+            '[[ "$PR_REPOSITORY" == "$GITHUB_REPOSITORY" ]]',
+            '[[ "$PR_HEAD_SHA" == "$LOCAL_SHA" ]]',
         ):
             self.assertIn(token, self.sync_source)
+
+    def test_existing_sync_pr_identity_is_fully_bound(self) -> None:
+        self.assertIn("base=main", self.sync_source)
+        self.assertIn('head=${REPOSITORY_OWNER}:${SYNC_BRANCH}', self.sync_source)
+        unsafe = self.sync_source.replace(
+            '[[ "$PR_HEAD_SHA" == "$LOCAL_SHA" ]]',
+            '[[ -n "$PR_HEAD_SHA" ]]',
+        )
+        with self.assertRaisesRegex(ValueError, "reviewed_sync_boundary_missing"):
+            VALIDATOR.validate_sync(unsafe, self.sync_document)
 
     def test_bot_created_pr_dispatches_exact_branch_validation(self) -> None:
         self.assertEqual(
@@ -103,6 +119,16 @@ class RepositorySecurityTests(unittest.TestCase):
             'git diff --check "$base_sha" "$GITHUB_SHA" -- . \':(exclude)upstream\'',
             source,
         )
+
+    def test_repository_tests_are_included_in_secret_scan(self) -> None:
+        source = (ROOT / ".github/workflows/validate.yml").read_text()
+        self.assertNotIn("--exclude-dir=tests", source)
+        unsafe = source.replace(
+            "--exclude-dir=upstream",
+            "--exclude-dir=upstream --exclude-dir=tests",
+        )
+        with self.assertRaisesRegex(ValueError, "repository_tests_must_be_secret_scanned"):
+            VALIDATOR.validate_workflow(unsafe)
 
 
 if __name__ == "__main__":

@@ -103,7 +103,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          ! grep -RIlE --exclude-dir=.git --exclude-dir=upstream --exclude-dir=tests \
+          ! grep -RIlE --exclude-dir=.git --exclude-dir=upstream \
             '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|Authorization:[[:space:]]*Bearer[[:space:]]+[A-Za-z0-9._~-]{16,}|client_secret[[:space:]]*=[[:space:]]*[^[:space:]<]+)' .
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             base_sha="${{ github.event.pull_request.base.sha }}"

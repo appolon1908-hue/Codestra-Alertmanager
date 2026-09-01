@@ -163,9 +163,11 @@ jobs:
             git push origin "HEAD:refs/heads/${SYNC_BRANCH}"
           fi
 
+          REPOSITORY_OWNER="${GITHUB_REPOSITORY%%/*}"
           mapfile -t OPEN_PRS < <(
-            gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-              --head "$SYNC_BRANCH" --json number --jq '.[].number'
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main&head=${REPOSITORY_OWNER}:${SYNC_BRANCH}&per_page=100" \
+              --jq '.[] | [.number,.base.ref,.head.ref,.head.repo.owner.login,.head.repo.full_name,.head.sha] | @tsv'
           )
           if (( ${#OPEN_PRS[@]} > 1 )); then
             echo 'Multiple open synchronization pull requests found.' >&2
@@ -177,5 +179,16 @@ jobs:
               --head "$SYNC_BRANCH" \
               --title "vendor(alertmanager): Sync reviewed official upstream ${UPSTREAM_SHA}" \
               --body "Pins exact official Alertmanager commit ${UPSTREAM_SHA} and applies only the reviewed five-file Slack fixture-host transform. Deployment remains disabled. Normal source validation and independent review are required."
+          else
+            IFS=$'\t' read -r PR_NUMBER PR_BASE PR_HEAD PR_OWNER PR_REPOSITORY PR_HEAD_SHA <<< "${OPEN_PRS[0]}"
+            [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+            [[ "$PR_BASE" == main ]]
+            [[ "$PR_HEAD" == "$SYNC_BRANCH" ]]
+            [[ "$PR_OWNER" == "$REPOSITORY_OWNER" ]]
+            [[ "$PR_REPOSITORY" == "$GITHUB_REPOSITORY" ]]
+            [[ "$PR_HEAD_SHA" == "$LOCAL_SHA" ]] || {
+              echo 'Existing synchronization pull request identity differs; refusing reuse.' >&2
+              exit 3
+            }
           fi
           gh workflow run validate.yml --repo "$GITHUB_REPOSITORY" --ref "$SYNC_BRANCH"
