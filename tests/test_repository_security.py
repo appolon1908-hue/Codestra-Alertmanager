@@ -188,6 +188,18 @@ class RepositorySecurityTests(unittest.TestCase):
             self.assertEqual(binary_found.returncode, 1)
             binary_secret.unlink()
 
+            for serialized_secret in (
+                '{"' + "client_" + "secret" + '":"' + ("B" * 32) + '"}\n',
+                "client_" + "secret: " + ("C" * 32) + "\n",
+            ):
+                serialized = scan_root / "serialized-credential.txt"
+                serialized.write_text(serialized_secret)
+                serialized_found = subprocess.run(
+                    [scanner, scan_root], check=False, capture_output=True, text=True
+                )
+                self.assertEqual(serialized_found.returncode, 1)
+                serialized.unlink()
+
             os.symlink(scan_root / "missing-target", scan_root / "dangling")
             failed = subprocess.run(
                 [scanner, scan_root], check=False, capture_output=True, text=True
