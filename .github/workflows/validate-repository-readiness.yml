@@ -16,12 +16,16 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
       - name: Prove exact source identity
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Validate repository source and deterministic bundle
         run: |
+          python3 -m pip install --disable-pip-version-check --no-cache-dir -r requirements-validation.txt
           python3 scripts/validate_codestra_alertmanager.py
           python3 scripts/test_stage6_alert_routing.py
           python3 scripts/validate_repository_readiness.py
@@ -48,9 +52,13 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
       - name: Prove and validate merge-result identity
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m pip install --disable-pip-version-check --no-cache-dir -r requirements-validation.txt
           python3 scripts/validate_codestra_alertmanager.py
           python3 scripts/validate_repository_readiness.py
           python3 -m unittest discover -s tests -p 'test_*.py'
