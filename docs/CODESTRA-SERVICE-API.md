@@ -6,9 +6,12 @@ This repository owns the **middleware-governed-alert-routing-authority** for the
 
 Alertmanager keeps its native API and protocol. The shared Codestra control plane in `appolon1908-hue/Codestra-Telemetry` performs only sanitized health, readiness, contract, topology, and immutable-release read-back. It never proxies native query bodies, ingestion, alert delivery, dashboard mutations, secret values, or credential issuance.
 
-Canonical hostname: `aler.codestra.media`  
-Native exposure: `internal_private`  
-Deployment class: `central`  
+Canonical hostname: `aler.codestra.media`
+
+Native exposure: `internal_private`
+
+Deployment class: `central`
+
 Contract: `codestra/api/service-contract.v1.json`
 
 ## Native operations
