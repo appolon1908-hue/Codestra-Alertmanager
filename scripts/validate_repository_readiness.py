@@ -8,6 +8,8 @@ import json
 import re
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -24,6 +26,7 @@ REQUIRED = [
     "codestra/release/runtime-image.lock.json",
     "codestra/release/config-bundle.manifest.json",
     "scripts/build_config_bundle.py",
+    "requirements-validation.txt",
 ]
 
 
@@ -113,15 +116,19 @@ def main() -> None:
             if not re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", reference):
                 fail(f"mutable action reference in {workflow.relative_to(ROOT)}: {reference}")
 
-    release_caller = (
-        ROOT / ".github/workflows/release-config-bundle.yml"
-    ).read_text(encoding="utf-8")
-    authority = (
+    release_caller = yaml.safe_load(
+        (ROOT / ".github/workflows/release-config-bundle.yml").read_text(encoding="utf-8")
+    )
+    release_job = release_caller.get("jobs", {}).get("release", {})
+    expected_authority = (
+        "appolon1908-hue/Codestra-Telemetry/.github/workflows/"
         "reusable-release-config-bundle.yml@"
         "777292781faeca9348d0e2ecdce6ac3f50c91d93"
     )
-    if authority not in release_caller or "component_id: alertmanager" not in release_caller:
+    if release_job.get("uses") != expected_authority:
         fail("release caller must pin the canonical Telemetry workflow authority")
+    if release_job.get("with", {}).get("component_id") != "alertmanager":
+        fail("release caller component identity mismatch")
 
     print("ALERTMANAGER_REPOSITORY_READINESS_SOURCE=PASS")
     print("PRODUCTION_ACTIVATION=NO")
