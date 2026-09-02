@@ -99,8 +99,20 @@ def main() -> None:
     if safety.get("native_service_public_exposure") is not False:
         fail("native_service_public_exposure must be false")
 
-    if contract.get("status") != "CONTRACT_PREPARED_RUNTIME_ENDPOINT_NOT_PROVEN":
+    if contract.get("status") != "SOURCE_AUTHORITY_ACCEPTED_RUNTIME_ENDPOINT_NOT_PROVEN":
         fail("Middleware contract must not claim a live/proven endpoint")
+    authority = contract.get("middleware_source_authority", {})
+    if authority != {
+        "repository": "appolon1908-hue/Middleware-",
+        "protected_branch": "main",
+        "protected_merge_sha": "65b8e511a412c4ba922876e906f95b9f2e4277a1",
+        "canonical_path": "/v1/integrations/alertmanager/events",
+    }:
+        fail("Middleware source authority must match its accepted protected merge")
+    if "forbid_automatic_business_system_mutation" not in contract.get(
+        "middleware_responsibilities", []
+    ):
+        fail("Middleware contract must forbid automatic business-system mutation")
     transport = contract.get("transport", {})
     if transport.get("url_source") != "/run/secrets/middleware-alert-webhook-url":
         fail("Middleware webhook URL must come from the runtime secret file")
