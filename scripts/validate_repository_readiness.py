@@ -83,8 +83,9 @@ def main() -> None:
     compose = (ROOT / "codestra/compose.yaml").read_text(encoding="utf-8")
     if re.search(r"(?m)^\s*ports\s*:", compose):
         fail("Alertmanager compose must not publish a host port")
-    if "@sha256:" not in compose:
-        fail("Alertmanager compose must require an immutable image")
+    image_lines = re.findall(r"(?m)^\s+image:\s*(\S+)\s*$", compose)
+    if image_lines != [lock["image"]]:
+        fail("Alertmanager compose image must exactly match the immutable runtime lock")
     config = (ROOT / "codestra/alertmanager.yml").read_text(encoding="utf-8")
     for receiver in (
         "email_configs",

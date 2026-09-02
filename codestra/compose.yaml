@@ -2,7 +2,7 @@ name: codestra-alertmanager
 
 services:
   alertmanager:
-    image: ${ALERTMANAGER_IMAGE:?ALERTMANAGER_IMAGE must be an immutable image reference containing @sha256:}
+    image: quay.io/prometheus/alertmanager@sha256:690c7b525f4367aa91f73e2f91c632206d32e97c6384bdbf2fb7a861b420340d
     restart: unless-stopped
     user: "65534:65534"
     read_only: true

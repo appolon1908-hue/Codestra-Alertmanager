@@ -43,9 +43,14 @@ class RepositoryReadinessTests(unittest.TestCase):
     def test_no_direct_provider_receiver_or_public_port(self) -> None:
         config = (ROOT / "codestra/alertmanager.yml").read_text()
         compose = (ROOT / "codestra/compose.yaml").read_text()
+        lock = json.loads(
+            (ROOT / "codestra/release/runtime-image.lock.json").read_text()
+        )
         self.assertNotIn("email_configs:", config)
         self.assertNotIn("smtp_", config)
         self.assertNotIn("\n    ports:\n", compose)
+        self.assertIn(f"image: {lock['image']}", compose)
+        self.assertNotIn("ALERTMANAGER_IMAGE", compose)
 
 
 if __name__ == "__main__":
