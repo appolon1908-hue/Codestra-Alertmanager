@@ -113,6 +113,16 @@ def main() -> None:
             if not re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", reference):
                 fail(f"mutable action reference in {workflow.relative_to(ROOT)}: {reference}")
 
+    release_caller = (
+        ROOT / ".github/workflows/release-config-bundle.yml"
+    ).read_text(encoding="utf-8")
+    authority = (
+        "reusable-release-config-bundle.yml@"
+        "777292781faeca9348d0e2ecdce6ac3f50c91d93"
+    )
+    if authority not in release_caller or "component_id: alertmanager" not in release_caller:
+        fail("release caller must pin the canonical Telemetry workflow authority")
+
     print("ALERTMANAGER_REPOSITORY_READINESS_SOURCE=PASS")
     print("PRODUCTION_ACTIVATION=NO")
 
