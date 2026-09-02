@@ -1,0 +1,57 @@
+name: codestra-alertmanager
+
+services:
+  alertmanager:
+    image: quay.io/prometheus/alertmanager@sha256:690c7b525f4367aa91f73e2f91c632206d32e97c6384bdbf2fb7a861b420340d
+    restart: unless-stopped
+    user: "65534:65534"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    stop_grace_period: 30s
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=0.0.0.0:9093
+      - --web.external-url=${ALERTMANAGER_EXTERNAL_URL:-https://aler.codestra.media/}
+      - --cluster.listen-address=
+      - --enable-feature=utf8-strict-mode,auto-gomemlimit,receiver-name-in-metrics
+      - --silences.max-silences=5000
+      - --silences.max-silence-size-bytes=65536
+    expose:
+      - "9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    secrets:
+      - middleware_alert_webhook_url
+      - middleware_alert_webhook_token
+    networks:
+      observability:
+        aliases:
+          - alertmanager
+      integration: {}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+
+networks:
+  observability:
+    external: true
+    name: ${CODESTRA_OBSERVABILITY_NETWORK:-codestra-observability}
+  integration:
+    external: true
+    name: ${CODESTRA_INTEGRATION_NETWORK:-codestra-integration}
+
+volumes:
+  alertmanager_data:
+
+secrets:
+  middleware_alert_webhook_url:
+    external: true
+    name: ${MIDDLEWARE_ALERT_WEBHOOK_URL_SECRET:-codestra-middleware-alert-webhook-url}
+  middleware_alert_webhook_token:
+    external: true
+    name: ${MIDDLEWARE_ALERT_WEBHOOK_TOKEN_SECRET:-codestra-middleware-alert-webhook-token}
